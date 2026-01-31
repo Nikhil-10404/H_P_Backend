@@ -10,6 +10,7 @@ export default async function sendSuspiciousLoginEmail({
   locationText,
   timeText,
   reasons,
+  token
 }) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -18,6 +19,8 @@ export default async function sendSuspiciousLoginEmail({
       pass: process.env.GMAIL_PASS,
     },
   });
+  const yesUrl = `${process.env.APP_URL}/api/auth/verify-login?token=${token}&action=allow`;
+  const noUrl = `${process.env.APP_URL}/api/auth/verify-login?token=${token}&action=deny`;
 
   const reasonText = reasons.map((r) => `• ${r}`).join("\n");
 
@@ -25,30 +28,32 @@ export default async function sendSuspiciousLoginEmail({
     from: process.env.GMAIL_USER,
     to,
     subject: "⚠️ Suspicious Login Detected - Hogwarts Security Alert",
-    text: `
-Hello ${fullName || "Wizard"} 🪄,
+    html: `
+<p>Hello ${fullName || "Wizard"} 🪄,</p>
 
-⚠️ A suspicious login attempt was detected in your wizard account.
+<p>⚠️ A suspicious login attempt was detected in your wizard account.</p>
 
-📌 Details:
-Device: ${deviceName || "Unknown"}
-Platform: ${platform || "unknown"}
-App Version: ${appVersion || "unknown"}
-IP Address: ${ip || "Unknown"}
-Location: ${locationText || "Unknown"}
-Time: ${timeText}
+<p>📌 Details:</p>
+<p>Device: ${deviceName || "Unknown"}</p>
+<p>Platform: ${platform || "unknown"}</p>
+<p>App Version: ${appVersion || "unknown"}</p>
+<p>IP Address: ${ip || "Unknown"}</p>
+<p>Location: ${locationText || "Unknown"}<p>
+<p>Time: ${timeText}</p>
 
-🚨 Why suspicious?
-${reasonText || "Unknown behavior"}
+<p>🚨 Why suspicious?</p>
+<p>${reasonText || "Unknown behavior"}</p>
 
-✅ If this was YOU:
-No action needed.
+<p>✅ If this was YOU:</p>
+<p><a href="${yesUrl}" style="padding:10px 16px;background:#2ecc71;color:white;border-radius:6px;text-decoration:none">YES, it was me</a></p>
 
-❌ If this was NOT YOU:
-Go to Manage Devices and banish unknown devices immediately.
+<p>❌ If this was NOT YOU:</p>
+  <p><a href="${noUrl}" style="padding:10px 16px;background:#e74c3c;color:white;border-radius:6px;text-decoration:none">NO, secure my account</a></p>
 
-Stay safe,
-Hogwarts Security Council 🛡️
+  <p>This link expires in 10 minutes.</p>
+
+<p>Stay safe,</p>
+<p>Hogwarts Security Council 🛡️</p>
 `,
   };
 

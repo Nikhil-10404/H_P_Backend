@@ -30,7 +30,6 @@ export async function detectSuspiciousLogin({
   // ✅ get last active sessions (latest first)
   const sessions = await SessionModel.find({
     userId,
-    isActive: true,
   })
     .sort({ lastUsedAt: -1 })
     .limit(5)

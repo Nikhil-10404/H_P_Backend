@@ -44,15 +44,12 @@ const sessionSchema = new mongoose.Schema(
     tempLoginTokenHash: { type: String, default: null },
     tempLoginExpiresAt: { type: Date, default: null },
 
-
-    // ✅ NEW: refresh token storage (hashed)
-    refreshTokenHash: { type: String, default: null },
-    refreshTokenExpiresAt: { type: Date, default: null },
-
-    // ✅ NEW: hard session expiry (30 days)
-    sessionExpiresAt: { type: Date, default: null },
-
     lastUsedAt: { type: Date, default: Date.now },
+
+    emailVerificationPending: {
+  type: Boolean,
+  default: false,
+},
 
     isActive: { type: Boolean, default: true },
   },
@@ -60,7 +57,7 @@ const sessionSchema = new mongoose.Schema(
 );
 
 // Prevent duplicate sessions per device
-sessionSchema.index({ userId: 1, deviceId: 1 });
+sessionSchema.index({ userId: 1, deviceIdFingerprint: 1 });
 
 const Session = mongoose.model("Session", sessionSchema);
 export default Session;

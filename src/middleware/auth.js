@@ -6,6 +6,7 @@ import SecurityEvent from "../models/SecurityEvent.js";
 import { getClientIp } from "../utils/getClientIp.js";
 import sendDeviceBindingAlertEmail from "../utils/sendDeviceBindingAlertEmail.js";
 import { deviceFingerprint } from "../utils/deviceBinding.js";
+import { logAudit } from "../utils/auditLog.js";
 
 const DEVICE_BINDING_EMAIL_COOLDOWN_MIN = 10;
 
@@ -20,9 +21,15 @@ function canSendDeviceBindingEmail(session) {
 
 export default async function auth(req, res, next) {
   try {
+//     console.log("----- AUTH MIDDLEWARE HIT -----");
+// console.log("PATH:", req.method, req.originalUrl);
+// console.log("AUTH HEADER:", req.headers.authorization);
+// console.log("X-DEVICE-ID:", req.headers["x-device-id"]);
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
+      console.log("No token provided");
       return res.status(401).json({ error: "No token provided" });
     }
 
@@ -30,23 +37,69 @@ export default async function auth(req, res, next) {
       ? authHeader.slice(7).trim()
       : authHeader.trim();
 
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+    } catch {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+//     console.log("DECODED TOKEN:", {
+//   userId: decoded.userId,
+//   sessionId: decoded.sessionId,
+//   type: decoded.type,
+// });
 
     if (!decoded?.userId || !decoded?.sessionId) {
+      console.log("invalid token payload");
       return res.status(401).json({ error: "Invalid token payload" });
     }
 
     if (decoded.type !== "access") {
+      console.log("invalid access token");
       return res.status(401).json({ error: "Invalid access token" });
     }
     
     const user = await User.findById(decoded.userId);
     const session = await Session.findById(decoded.sessionId);
-    if (!session || !session.isActive) {
-      return res.status(401).json({ error: "Session expired. Please login again." });
-    }
+//     console.log("SESSION FROM DB:", {
+//   exists: !!session,
+//   isActive: session?.isActive,
+//   emailVerificationPending: session?.emailVerificationPending,
+//   twoFactorVerified: session?.twoFactorVerified,
+//   sessionExpiresAt: session?.sessionExpiresAt,
+// });
+
+   if (!session) {
+    // console.log("AUTH BLOCKED: Session expired");
+  return res.status(401).json({ error: "Session expired. Please login again." });
+}
+
+if (session.emailVerificationPending) {
+  return res.status(403).json({
+    requiresEmailConfirmation: true,
+    sessionId: session._id,
+  });
+}
+
+if (!session.isActive) {
+  const pending = await LoginVerification.findOne({
+    sessionId: session._id,
+    status: "PENDING",
+    expiresAt: { $gt: new Date() },
+  });
+
+  if (pending) {
+    return res.status(403).json({
+      requiresEmailConfirmation: true,
+      sessionId: session._id,
+    });
+  }
+  // console.log("session expired please login again");
+  return res.status(401).json({ error: "Session expired. Please login again." });
+}
 
     if (user.twoFactorEnabled==true&&session.twoFactorVerified === false) {
+      // console.log("2fa not verified");
       return res.status(401).json({ error: "2FA not verified" });
     }
 
@@ -55,7 +108,7 @@ export default async function auth(req, res, next) {
       session.refreshTokenHash = null;
       session.refreshTokenExpiresAt = null;
       await session.save();
-
+      console.log("session expired");
       return res.status(401).json({ error: "Session expired" });
     }
 
@@ -63,6 +116,7 @@ export default async function auth(req, res, next) {
     const incomingDeviceId = req.headers["x-device-id"];
 
     if (!incomingDeviceId) {
+      console.log("Device identity spell missing (x-device-id). Please login again.");
       return res.status(401).json({
         error: "Device identity spell missing (x-device-id). Please login again.",
       });
@@ -71,7 +125,10 @@ export default async function auth(req, res, next) {
     // ✅ If fingerprint field exists, check it FIRST (fast O(1))
     const incomingFp = deviceFingerprint(incomingDeviceId);
 
-    if (session.deviceIdFingerprint && incomingFp !== session.deviceIdFingerprint) {
+    if (session.deviceIdFingerprint && incomingFp !== session.deviceIdFingerprint &&
+  session.deviceIdHash) {
+     const okHash = await bcrypt.compare(incomingDeviceId, session.deviceIdHash);
+     if (!okHash) {
       await SecurityEvent.create({
         userId: decoded.userId,
         sessionId: session._id,
@@ -106,10 +163,27 @@ export default async function auth(req, res, next) {
           console.log("Device binding email failed:", emailErr?.message || emailErr);
         }
       }
-
+      
+      await logAudit({
+  userId: decoded.userId,
+  sessionId: session._id,
+  type: "DEVICE_MISMATCH_BLOCKED",
+  outcome: "BLOCKED",
+  message: "Access token rejected due to device mismatch",
+  ip: getClientIp(req),
+  userAgent: req.headers["user-agent"] || "",
+  device: {
+    deviceIdFingerprint: incomingFp,
+    deviceName: session.deviceName,
+    platform: session.platform,
+    appVersion: session.appVersion,
+  },
+});
+      console.log("Dark magic detected! Token rejected (device mismatch).");
       return res.status(401).json({
         error: "🧿 Dark magic detected! Token rejected (device mismatch).",
       });
+    }
     }
 
     // ✅ fallback check: bcrypt hash (secure, slower)
@@ -127,7 +201,7 @@ export default async function auth(req, res, next) {
           platform: session.platform || "",
           appVersion: session.appVersion || "",
         });
-
+        console.log(" 🧿 Dark magic detected! Token rejected (device mismatch).");
         return res.status(401).json({
           error: "🧿 Dark magic detected! Token rejected (device mismatch).",
         });

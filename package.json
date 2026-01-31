@@ -3,26 +3,32 @@
     "@arcjet/node": "^1.0.0-beta.17",
     "arcjet": "^1.0.0-beta.17",
     "bcryptjs": "^3.0.3",
-    "cors": "^2.8.5",
+    "bullmq": "^5.67.2",
+    "cors": "^2.8.6",
     "crypto": "^1.0.1",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "firebase-admin": "^13.6.0",
     "google-auth-library": "^10.5.0",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.9.2",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^6.21.0",
     "mongoose": "^8.21.0",
     "nodemailer": "^7.0.12",
     "qrcode": "^1.5.4",
-    "speakeasy": "^2.0.0"
+    "rate-limiter-flexible": "^9.0.1",
+    "speakeasy": "^2.0.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
   },
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "worker": "nodemon jobs/worker.js"
   },
   "type": "module"
 }
