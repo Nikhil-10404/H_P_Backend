@@ -9,6 +9,7 @@ import { generateResetToken } from "../utils/resetUtils.js";
 import sendOTPEmail from "../utils/sendEmail.js";
 import { OAuth2Client } from "google-auth-library";
 import auth from "../middleware/auth.js";
+import fastAuth from "../middleware/fastAuth.js";
 import admin from "../utils/firebaseAdmin.js";
 import Session from "../models/Session.js";
 import {getClientIp} from "../utils/getClientIp.js";
@@ -473,6 +474,43 @@ router.post("/firebase-google-login", rateLimit({
 const userAgent = req.headers["user-agent"] || "";
 const deviceIdFingerprint = deviceFingerprint(deviceId);
 
+ // ✅ If 2FA ON -> create PendingLogin (NOT session)
+    if (user.twoFactorEnabled && user.twoFactorMethod === "totp") {
+      const pending = await PendingLogin.create({
+        userId: user._id,
+        deviceIdFingerprint: deviceFingerprint(deviceId),
+        deviceIdHash: await hashDeviceId(deviceId),
+        deviceName,
+        platform,
+        appVersion,
+        ip,
+        userAgent,
+        location: {
+          latitude: location?.latitude ?? null,
+          longitude: location?.longitude ?? null,
+          city: location?.city || "",
+          region: location?.region || "",
+          country: location?.country || "",
+        },
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      });
+
+      const tempToken = createTempLoginToken({
+        userId: user._id,
+        sessionId: pending._id,
+      });
+
+      pending.tempLoginTokenHash = hashToken(tempToken);
+      await pending.save();
+
+      return res.json({
+        requires2FA: true,
+        method: "totp",
+        tempLoginToken: tempToken,
+        message: "Enter authenticator code to enter the castle 🏰",
+      });
+    }
+
 const suspiciousResult = await detectSuspiciousLogin({
   userId: user._id,
   deviceId,
@@ -481,6 +519,7 @@ const suspiciousResult = await detectSuspiciousLogin({
   SessionModel: Session,
   matchDeviceId,
 });
+console.log("🟡 [AUTH] Suspicious check result:", suspiciousResult);
 
 // ✅ If suspicious -> store + email (same block)
 if (suspiciousResult.suspicious) {
@@ -494,6 +533,7 @@ if (suspiciousResult.suspicious) {
     ip,
     userAgent,
     isActive: false, // 🔴 IMPORTANT
+    emailVerificationPending: true,
     sessionExpiresAt: getSessionExpiryDate(),
     location,
   });
@@ -539,6 +579,12 @@ if (suspiciousResult.suspicious) {
           country: location?.country || "",
         },
   });
+
+console.log("📨 [AUTH] Enqueuing suspicious login email", {
+  to: user.email,
+  reasons: suspiciousResult.reasons,
+  hasToken: !!rawToken,
+});
 
   enqueueEmail({
      type: "SUSPICIOUS_LOGIN",
@@ -586,44 +632,6 @@ let session = await Session.findOne({
   userId: user._id,
   deviceIdFingerprint,
 });
-
-
- // ✅ If 2FA ON -> create PendingLogin (NOT session)
-    if (user.twoFactorEnabled && user.twoFactorMethod === "totp") {
-      const pending = await PendingLogin.create({
-        userId: user._id,
-        deviceIdFingerprint: deviceFingerprint(deviceId),
-        deviceIdHash: await hashDeviceId(deviceId),
-        deviceName,
-        platform,
-        appVersion,
-        ip,
-        userAgent,
-        location: {
-          latitude: location?.latitude ?? null,
-          longitude: location?.longitude ?? null,
-          city: location?.city || "",
-          region: location?.region || "",
-          country: location?.country || "",
-        },
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      });
-
-      const tempToken = createTempLoginToken({
-        userId: user._id,
-        sessionId: pending._id,
-      });
-
-      pending.tempLoginTokenHash = hashToken(tempToken);
-      await pending.save();
-
-      return res.json({
-        requires2FA: true,
-        method: "totp",
-        tempLoginToken: tempToken,
-        message: "Enter authenticator code to enter the castle 🏰",
-      });
-    }
 
     // ✅ 2FA OFF -> create session
    if(!session){
@@ -2181,15 +2189,12 @@ router.post("/2fa/totp/confirm", rateLimit({
   location: session.location || {},
 });
 
-
     return res.json({ success: true, message: "2FA enabled successfully" });
   } catch (err) {
     console.log("totp confirm error:", err);
     return res.status(500).json({ error: "Failed to confirm TOTP" });
   }
 });
-
-
 
 router.post("/2fa/totp/disable", auth, validateBody(totpDisableSchema),async (req, res) => {
   try {
@@ -2303,7 +2308,7 @@ router.post("/totp/regenerate-backup-codes",rateLimit({
 
     // ✅ generate fresh backup codes (8)
 
-const backupCodes = generateBackupCodes(8);
+const backupCodes = generateBackupCodes(8);cl
 
 user.backupCodes = await Promise.all(
   backupCodes.map(async (c) => ({

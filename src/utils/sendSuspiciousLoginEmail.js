@@ -12,6 +12,11 @@ export default async function sendSuspiciousLoginEmail({
   reasons,
   token
 }) {
+   console.log("✉️ [MAILER] Preparing suspicious login email", {
+  to,
+  hasToken: !!token,
+  reasons,
+});
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -57,5 +62,15 @@ export default async function sendSuspiciousLoginEmail({
 `,
   };
 
+ try {
   await transporter.sendMail(mailOptions);
+  console.log("✅ [MAILER] Email sent");
+} catch (err) {
+  console.error("❌ [MAILER] Failed to send email:", {
+    message: err.message,
+    stack: err.stack,
+  });
+  throw err; // let BullMQ mark job as failed
+}
+  console.log("✅ [MAILER] Suspicious login email sent to:", to);
 }

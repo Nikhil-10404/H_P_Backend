@@ -23,78 +23,67 @@ export async function detectSuspiciousLogin({
   ip,
   location,
   SessionModel,
-  matchDeviceId, // ✅ pass function
+  matchDeviceId,
 }) {
   const reasons = [];
 
-  // ✅ get last active sessions (latest first)
+  // ✅ Only consider ACTIVE sessions
   const sessions = await SessionModel.find({
     userId,
-  })
-    .sort({ lastUsedAt: -1 })
-    .limit(5)
-    .lean();
+    // isActive: true,
+  }).lean();
 
   if (!sessions.length) {
+    // first ever login
     return { suspicious: false, reasons: [] };
   }
 
-  // ✅ Check if current device already exists in sessions
-  let sameDeviceSession = null;
+  // ✅ Has this device EVER been used?
+  let knownDevice = false;
 
   for (const s of sessions) {
     if (!s.deviceIdHash) continue;
-
     const ok = await matchDeviceId(deviceId, s.deviceIdHash);
     if (ok) {
-      sameDeviceSession = s;
+      knownDevice = true;
       break;
     }
   }
 
-  // ✅ If no match => new device
-  if (!sameDeviceSession) {
+  // 🔴 NEW DEVICE → suspicious
+  if (!knownDevice) {
     reasons.push("NEW_DEVICE");
   }
 
-  // ✅ Pick lastSession for other comparisons
-  const lastSession = sessions[0];
-
-  // ✅ IP suddenly changed
-  if (ip && lastSession.ip && ip !== lastSession.ip) {
-    reasons.push("NEW_IP");
-  }
-
-  // ✅ location jump detection
-  const prevLat = lastSession.location?.latitude;
-  const prevLon = lastSession.location?.longitude;
-  const newLat = location?.latitude;
-  const newLon = location?.longitude;
-
-  if (
-    typeof prevLat === "number" &&
-    typeof prevLon === "number" &&
-    typeof newLat === "number" &&
-    typeof newLon === "number"
-  ) {
-    const km = haversineKm(prevLat, prevLon, newLat, newLon);
-
-    if (km > 50) reasons.push("LOCATION_CHANGED");
-
-    const lastUsed = lastSession.lastUsedAt
-      ? new Date(lastSession.lastUsedAt).getTime()
-      : null;
-
-    if (lastUsed) {
-      const now = Date.now();
-      const hours = (now - lastUsed) / (1000 * 60 * 60);
-
-      if (hours > 0) {
-        const speed = km / hours;
-        if (speed > 900) reasons.push("IMPOSSIBLE_TRAVEL");
-      }
+  // ✅ IP check ONLY if device is new
+  if (!knownDevice) {
+    const knownIps = new Set(sessions.map((s) => s.ip).filter(Boolean));
+    if (ip && !knownIps.has(ip)) {
+      reasons.push("NEW_IP");
     }
   }
 
-  return { suspicious: reasons.length > 0, reasons };
+  // ✅ Location jump ONLY if device is new
+  // if (!knownDevice && location) {
+  //   const last = sessions[0]; // any active session is fine
+  //   const prevLat = last.location?.latitude;
+  //   const prevLon = last.location?.longitude;
+  //   const newLat = location.latitude;
+  //   const newLon = location.longitude;
+
+  //   if (
+  //     typeof prevLat === "number" &&
+  //     typeof prevLon === "number" &&
+  //     typeof newLat === "number" &&
+  //     typeof newLon === "number"
+  //   ) {
+  //     const km = haversineKm(prevLat, prevLon, newLat, newLon);
+  //     if (km > 50) reasons.push("LOCATION_CHANGED");
+  //   }
+  // }
+
+  return {
+    suspicious: reasons.length > 0,
+    reasons,
+  };
 }

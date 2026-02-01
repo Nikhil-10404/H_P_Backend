@@ -42,6 +42,11 @@ export async function cacheSession(session) {
       )
     : 60 * 60; // fallback 1h
 
+    
+  console.log("🧠 [REDIS] SET session cache");
+  console.log("  key:", key);
+  console.log("  ttl (seconds):", ttlSeconds);
+
   await redis.set(key, JSON.stringify(payload), "EX", ttlSeconds);
 }
 
@@ -51,7 +56,15 @@ export async function cacheSession(session) {
 export async function getCachedSession(sessionId) {
   const key = getSessionKey(sessionId);
   const data = await redis.get(key);
-  return data ? JSON.parse(data) : null;
+  if (data) {
+  await redis.incr("metrics:fastAuth:hit");
+  console.log("⚡ [REDIS] HIT");
+  return JSON.parse(data);
+} else {
+  await redis.incr("metrics:fastAuth:miss");
+  console.log("🐢 [REDIS] MISS");
+  return null;
+}
 }
 
 /**

@@ -25,7 +25,7 @@ export default async function auth(req, res, next) {
 // console.log("PATH:", req.method, req.originalUrl);
 // console.log("AUTH HEADER:", req.headers.authorization);
 // console.log("X-DEVICE-ID:", req.headers["x-device-id"]);
-
+console.time("🐢 strictAuth_mongo");
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
@@ -214,7 +214,7 @@ if (!session.isActive) {
 
     req.userId = decoded.userId;
     req.sessionId = decoded.sessionId;
-
+    console.timeEnd("🐢 strictAuth_mongo");
     next();
   } catch (err) {
     console.log("auth middleware error:", err?.message || err);

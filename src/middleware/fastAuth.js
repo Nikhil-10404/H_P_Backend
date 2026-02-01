@@ -11,6 +11,8 @@ import { deviceFingerprint } from "../utils/deviceBinding.js";
  */
 export default async function fastAuth(req, res, next) {
   try {
+    console.time("⏱️ fastAuth_total");
+
     const authHeader = req.headers.authorization;
     const deviceId = req.headers["x-device-id"];
 
@@ -47,12 +49,17 @@ export default async function fastAuth(req, res, next) {
     const cached = await getCachedSession(decoded.sessionId);
 
     // Redis miss → fallback to strict auth
-    if (!cached) {
+   if (!cached) {
+      console.timeEnd("⏱️ fastAuth_total");
       return res.status(401).json({
-        error: "Session not found. Please login again.",
+        error: "Session not found",
         code: "SESSION_CACHE_MISS",
       });
     }
+
+    console.log("⚡ fastAuth HIT — Redis session used");
+
+    console.timeEnd("⏱️ fastAuth_total");
 
     // Session state checks
     if (!cached.isActive) {
@@ -96,6 +103,7 @@ export default async function fastAuth(req, res, next) {
 
     next();
   } catch (err) {
+    console.timeEnd("⏱️ fastAuth_total");
     console.error("fastAuth error:", err?.message || err);
     return res.status(401).json({ error: "Unauthorized" });
   }

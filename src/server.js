@@ -1,19 +1,33 @@
+// import "dotenv/config";
 import dotenv from "dotenv";
 
-const envFile =
-  process.env.NODE_ENV === "production"
-    ? ".env.production.local"
-    : ".env.development.local";
+dotenv.config({
+  path:
+    process.env.NODE_ENV === "production"
+      ? ".env.production.local"
+      : ".env.development.local",
+});
+// import dotenv from "dotenv";
 
-dotenv.config({ path: envFile });
+// const envFile =
+//   process.env.NODE_ENV === "production"
+//     ? ".env.production.local"
+//     : ".env.development.local";
 
+// dotenv.config({ path: envFile });
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.js";
-
+console.log("ENV CHECK:", {
+  NODE_ENV: process.env.NODE_ENV,
+  REDIS_URL: process.env.REDIS_URL,
+  DB_URI: !!process.env.DB_URI,
+});
+// ✅ DB connect
+await connectDB();
 const app = express();
 
 // ✅ Trust proxy (important for Render / reverse proxy)
@@ -76,8 +90,7 @@ app.use(
   })
 );
 
-// ✅ DB connect
-connectDB();
+
 
 // ✅ Routes
 app.use("/api/auth", authRoutes);

@@ -23,12 +23,13 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "nodemon": "^3.1.11"
   },
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "worker": "nodemon jobs/worker.js"
-  },
+  "dev": "cross-env NODE_ENV=development nodemon src/server.js",
+  "worker": "cross-env NODE_ENV=development node src/jobs/worker.entry.js",
+  "start": "cross-env NODE_ENV=production node src/server.js"
+},
   "type": "module"
 }
